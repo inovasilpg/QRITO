@@ -147,7 +147,6 @@
      
      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-amber-500 relative overflow-hidden bg-amber-50/30">
-       <div class="absolute -right-4 -top-4 w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">🚶</span></div>
        <p class="text-sm font-bold text-amber-700 mb-1">Sedang di Toilet</p>
        <div class="flex items-baseline gap-2">
          <p class="text-3xl sm:text-4xl font-black text-amber-600" id="stat-active">0</p>
@@ -155,17 +154,14 @@
        </div>
       </div>
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-emerald-500 relative overflow-hidden">
-       <div class="absolute -right-4 -top-4 w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">✅</span></div>
        <p class="text-sm font-semibold text-slate-500 mb-1">Selesai (Kembali)</p>
        <p class="text-3xl sm:text-4xl font-black text-emerald-600" id="stat-returned">0</p>
       </div>
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-blue-500 relative overflow-hidden">
-       <div class="absolute -right-4 -top-4 w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">📊</span></div>
        <p class="text-sm font-semibold text-slate-500 mb-1">Total Izin Hari Ini</p>
        <p class="text-3xl sm:text-4xl font-black text-blue-600" id="stat-total-today">0</p>
       </div>
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-red-500 relative overflow-hidden bg-red-50/30">
-       <div class="absolute -right-4 -top-4 w-16 h-16 bg-red-100 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">⏱️</span></div>
        <p class="text-sm font-bold text-red-700 mb-1">Terlalu Lama (>15m)</p>
        <p class="text-3xl sm:text-4xl font-black text-red-600" id="stat-warning">0</p>
       </div>
@@ -667,8 +663,9 @@
             weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
         
+        // PENTING: Memperbarui seluruh statistik Dasbor secara otomatis (termasuk Selesai, Total, dan Peringatan Waktu)
         if(!document.getElementById('content-dashboard').classList.contains('hidden')) {
-            updateWarningCounter();
+            updateDashboard(); 
         }
     }, 10000);
 
@@ -728,13 +725,18 @@
     let chartPieInstance = null;
 
     function updateDashboard() {
-        const todayStr = getTodayString();
+        const now = new Date();
         
-        // Record total hari ini (keluar hari ini)
-        const todayRecords = dbToilet.filter(a => a.date === todayStr);
+        // PENTING: Menggunakan komparasi objek Date mentah agar kebal terhadap bug format string/timezone backend
+        const todayRecords = dbToilet.filter(r => {
+            if(!r.timeOut) return false;
+            const outDate = new Date(r.timeOut);
+            return outDate.getDate() === now.getDate() &&
+                   outDate.getMonth() === now.getMonth() &&
+                   outDate.getFullYear() === now.getFullYear();
+        });
         
-        // PENTING: Ambil SEMUA yang berstatus keluar secara global dari database
-        // Bukan difilter by Date lagi, memastikan yang keluar kemarin tapi blm masuk tercatat
+        // Ambil SEMUA yang berstatus keluar secara global dari database
         const activeRecords = dbToilet.filter(r => r.status === 'keluar');
         
         // Selesai (kembali) untuk izin yang dibuat HARI INI
@@ -776,15 +778,14 @@
         document.getElementById('summary-total-all').innerText = dbToilet.length;
         document.getElementById('summary-students').innerText = dbStudents.length;
         document.getElementById('summary-completed').innerText = dbToilet.filter(r => r.status === 'kembali').length;
-        document.getElementById('summary-active-all').innerText = dbToilet.filter(r => r.status === 'keluar').length;
+        document.getElementById('summary-active-all').innerText = activeRecords.length;
 
-        // Render Grafik dengan Data Backend yang Relevan (All Time Data & Populasi Total)
+        // Render Grafik
         renderCharts(todayRecords, dbToilet, activeRecords.length, dbStudents.length);
     }
 
     function updateWarningCounter(activeRecords = null) {
         if(!activeRecords) {
-            // Hapus filter by Date agar siswa yang ngegantung sejak kemarin terdeteksi peringatan!
             activeRecords = dbToilet.filter(a => a.status === 'keluar'); 
         }
         let warnings = 0;
@@ -797,25 +798,27 @@
 
     function renderCharts(todayRecords, allRecords, activeCount, totalStudents) {
         const pieCtx = document.getElementById('chart-pie');
-        if(chartPieInstance) chartPieInstance.destroy();
-        
-        // Kalkulasi proporsi populasi real-time
         const inClassCount = totalStudents - activeCount;
 
-        chartPieInstance = new Chart(pieCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Sedang di Toilet', 'Berada di Kelas'],
-                datasets: [{
-                    data: [activeCount, inClassCount],
-                    backgroundColor: ['#f59e0b', '#10b981'],
-                    borderWidth: 0
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
-        });
+        // Gunakan pembaruan (.update) alih-alih menghancurkan chart agar tidak berkedip tiap 10 detik
+        if (chartPieInstance) {
+            chartPieInstance.data.datasets[0].data = [activeCount, inClassCount];
+            chartPieInstance.update();
+        } else {
+            chartPieInstance = new Chart(pieCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Sedang di Toilet', 'Berada di Kelas'],
+                    datasets: [{
+                        data: [activeCount, inClassCount],
+                        backgroundColor: ['#f59e0b', '#10b981'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
 
-        // Kalkulasi perbandingan Hari Ini vs Seluruh Waktu per Kelas
         const classStatsToday = {};
         const classStatsAll = {};
         
@@ -839,24 +842,31 @@
         const dataAll = classLabels.map(c => classStatsAll[c]);
 
         const classCtx = document.getElementById('chart-class');
-        if(chartClassInstance) chartClassInstance.destroy();
-        chartClassInstance = new Chart(classCtx, {
-            type: 'bar',
-            data: {
-                labels: classLabels,
-                datasets: [
-                    { label: 'Hari Ini', data: dataToday, backgroundColor: '#3b82f6', borderRadius: 4 },
-                    { label: 'Total Keseluruhan', data: dataAll, backgroundColor: '#94a3b8', borderRadius: 4 }
-                ]
-            },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        
+        if (chartClassInstance) {
+            chartClassInstance.data.labels = classLabels;
+            chartClassInstance.data.datasets[0].data = dataToday;
+            chartClassInstance.data.datasets[1].data = dataAll;
+            chartClassInstance.update();
+        } else {
+            chartClassInstance = new Chart(classCtx, {
+                type: 'bar',
+                data: {
+                    labels: classLabels,
+                    datasets: [
+                        { label: 'Hari Ini', data: dataToday, backgroundColor: '#3b82f6', borderRadius: 4 },
+                        { label: 'Total Keseluruhan', data: dataAll, backgroundColor: '#94a3b8', borderRadius: 4 }
+                    ]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     /* =========================================
@@ -1203,20 +1213,36 @@
         // Ini memastikan mereka selalu bisa scan masuk walaupun hari sudah berganti.
         const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar');
 
-        resultCard.classList.remove('hidden');
+        // Bersihkan semua border warna sebelumnya agar tidak bentrok
+        resultCard.classList.remove('hidden', 'border-amber-500', 'border-emerald-500', 'border-red-500');
 
         if (activeRecordIndex !== -1) {
             // SISWA KEMBALI
             dbToilet[activeRecordIndex].status = 'kembali';
             dbToilet[activeRecordIndex].timeIn = new Date().toISOString();
             
-            resultCard.classList.replace('border-amber-500', 'border-emerald-500') || resultCard.classList.add('border-emerald-500');
+            resultCard.classList.add('border-emerald-500');
             bgCircle.className = "absolute -right-10 -top-10 w-40 h-40 rounded-full bg-emerald-50";
             badge.innerText = "IZIN SELESAI (KEMBALI)";
             badge.className = "text-xs font-black tracking-wider text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-full mb-3 inline-block uppercase";
             
             showToast(`${student.name} berhasil ditandai KEMBALI.`, "success");
         } else {
+            // CEK KUOTA HARIAN (Hanya Boleh 1 Kali Sehari)
+            const hasGoneToday = dbToilet.some(r => r.studentId === student.id && r.date === todayStr);
+
+            if (hasGoneToday) {
+                // BLOKIR JIKA SUDAH IZIN HARI INI
+                resultCard.classList.add('border-red-500');
+                bgCircle.className = "absolute -right-10 -top-10 w-40 h-40 rounded-full bg-red-50";
+                badge.innerText = "BATAS IZIN HABIS ⛔";
+                badge.className = "text-xs font-black tracking-wider text-red-700 bg-red-100 px-3 py-1.5 rounded-full mb-3 inline-block uppercase";
+                
+                showToast(`Maaf, ${student.name} sudah menggunakan jatah izin hari ini!`, "error");
+                resumeScannerAfterDelay(4000); // Beri jeda lebih lama agar peringatan terbaca
+                return; // Stop fungsi disini, data tidak disimpan
+            }
+
             // SISWA KELUAR
             dbToilet.push({
                 id: 'T' + Date.now() + Math.floor(Math.random()*100),
@@ -1227,7 +1253,7 @@
                 status: 'keluar'
             });
 
-            resultCard.classList.replace('border-emerald-500', 'border-amber-500') || resultCard.classList.add('border-amber-500');
+            resultCard.classList.add('border-amber-500');
             bgCircle.className = "absolute -right-10 -top-10 w-40 h-40 rounded-full bg-amber-50";
             badge.innerText = "SEDANG KELUAR";
             badge.className = "text-xs font-black tracking-wider text-amber-700 bg-amber-100 px-3 py-1.5 rounded-full mb-3 inline-block uppercase";
@@ -1450,19 +1476,30 @@
                         desc.innerHTML = `Terima kasih, <strong>${student.name}</strong>.<br>Anda telah kembali ke kelas.`;
                         icon.innerHTML = `<div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-3xl">👍</div>`;
                     } else {
-                        // Keluar
-                        dbToilet.push({
-                            id: 'T' + Date.now() + Math.floor(Math.random()*100),
-                            studentId: student.id,
-                            date: todayStr,
-                            timeOut: new Date().toISOString(),
-                            timeIn: null,
-                            status: 'keluar'
-                        });
-                        title.innerText = "Diizinkan Keluar 🚶";
-                        title.classList.replace('text-slate-800', 'text-amber-600');
-                        desc.innerHTML = `<strong>${student.name}</strong>,<br>Silakan menuju toilet. Ingat waktu!`;
-                        icon.innerHTML = `<div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl">⏱️</div>`;
+                        // CEK KUOTA HARIAN (Direct Scan)
+                        const hasGoneToday = dbToilet.some(r => r.studentId === student.id && r.date === todayStr);
+
+                        if (hasGoneToday) {
+                            // BLOKIR
+                            title.innerText = "Batas Izin Habis ⛔";
+                            title.classList.replace('text-slate-800', 'text-red-600');
+                            desc.innerHTML = `Maaf <strong>${student.name}</strong>,<br>Kamu sudah menggunakan jatah izin toilet untuk hari ini.`;
+                            icon.innerHTML = `<div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-3xl">🚫</div>`;
+                        } else {
+                            // Keluar
+                            dbToilet.push({
+                                id: 'T' + Date.now() + Math.floor(Math.random()*100),
+                                studentId: student.id,
+                                date: todayStr,
+                                timeOut: new Date().toISOString(),
+                                timeIn: null,
+                                status: 'keluar'
+                            });
+                            title.innerText = "Diizinkan Keluar 🚶";
+                            title.classList.replace('text-slate-800', 'text-amber-600');
+                            desc.innerHTML = `<strong>${student.name}</strong>,<br>Silakan menuju toilet. Ingat waktu!`;
+                            icon.innerHTML = `<div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl">⏱️</div>`;
+                        }
                     }
                     saveData();
                 } else {
