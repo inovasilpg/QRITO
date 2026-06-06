@@ -1,0 +1,1381 @@
+<!doctype html>
+<html lang="id" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manajemen Izin Toilet - QRITO</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  
+  <style>
+    body { box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: #f8fafc; border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    
+    .fade-in { animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .slide-up { animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .pulse-dot { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    @media (max-width: 640px) {
+      .touch-target { min-height: 44px; min-width: 44px; }
+      .mobile-hide { display: none; }
+      .tab-scroll { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+      .tab-scroll::-webkit-scrollbar { display: none; }
+    }
+    
+    @media (max-width: 768px) {
+      table { font-size: 0.813rem; }
+      thead th { padding: 0.5rem; font-size: 0.688rem; }
+      tbody td { padding: 0.5rem; }
+      .mobile-hide-col { display: none; }
+    }
+
+    #qr-reader { border: none !important; border-radius: 1rem; overflow: hidden; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; }
+    #qr-reader video { width: 100% !important; border-radius: 1rem; object-fit: cover; }
+    #qr-reader__scan_region img { opacity: 0.3; }
+    
+    .stat-card { transition: all 0.3s ease; background: white; border: 1px solid #e2e8f0; }
+    .stat-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025); }
+
+    /* Toast Notification */
+    #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+    .toast { background: #1e293b; color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 8px; animation: slideInRight 0.3s ease-out forwards; }
+    @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast.fade-out { animation: fadeOutRight 0.3s ease-in forwards; }
+    @keyframes fadeOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+
+    /* Custom Confirm Modal */
+    .modal-overlay { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
+  </style>
+</head>
+<body class="h-full bg-slate-50 text-slate-800">
+  
+  <div id="custom-confirm-modal" class="hidden fixed inset-0 z-[999] flex items-center justify-center modal-overlay p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-sm w-full p-6 slide-up">
+        <h3 id="confirm-title" class="text-xl font-bold text-slate-800 mb-2">Konfirmasi</h3>
+        <p id="confirm-message" class="text-slate-600 mb-6 text-sm">Apakah Anda yakin ingin melanjutkan tindakan ini?</p>
+        <div id="confirm-password-area" class="hidden mb-6">
+            <input type="password" id="confirm-password-input" placeholder="Masukkan Sandi" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50">
+            <p id="confirm-password-error" class="text-red-500 text-xs mt-2 hidden font-bold">Password salah!</p>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button onclick="closeConfirmModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-sm transition-colors">Batal</button>
+            <button id="confirm-action-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm transition-colors shadow-md shadow-red-500/20">Ya, Lanjutkan</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="app" class="h-full w-full flex flex-col md:flex-row overflow-hidden bg-slate-50">
+   <!-- Sidebar Navigasi -->
+   <aside class="bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0 md:w-64 flex flex-col z-50 shadow-sm">
+    <div class="bg-slate-900 text-white p-4 flex items-center gap-3">
+     <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden p-1">
+      <span class="text-2xl">🚽</span>
+     </div>
+     <div class="min-w-0 flex-1">
+      <h1 id="app-title" class="text-lg font-bold tracking-tight truncate">QRITO</h1>
+      <p id="school-name" class="text-slate-400 text-xs truncate font-medium">Manajemen Izin Toilet</p>
+     </div>
+    </div>
+    
+    <nav class="flex md:flex-col gap-2 overflow-x-auto md:overflow-y-auto p-3 tab-scroll" id="main-nav">
+     <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-4 py-3 text-sm font-bold bg-blue-50 text-blue-600 rounded-xl transition-all whitespace-nowrap text-left flex items-center gap-3"><span class="text-lg">📊</span> Dasbor</button> 
+     <button onclick="switchTab('analysis')" id="tab-analysis" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl transition-all whitespace-nowrap text-left flex items-center gap-3"><span class="text-lg">📈</span> Riwayat Izin</button>
+     <button onclick="switchTab('qr')" id="tab-qr" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl transition-all whitespace-nowrap text-left flex items-center gap-3"><span class="text-lg">💳</span> Kartu Izin QR</button>
+     <button onclick="switchTab('scan')" id="tab-scan" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl transition-all whitespace-nowrap text-left flex items-center gap-3"><span class="text-lg">📷</span> Scan QR</button>
+     <button onclick="checkAdminAccess()" id="tab-admin" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl transition-all whitespace-nowrap text-left flex items-center gap-3"><span class="text-lg">⚙️</span> Kelola Siswa</button>
+    </nav>
+   </aside>
+
+   <!-- Area Konten Utama -->
+   <div class="flex-1 flex flex-col h-full overflow-hidden">
+    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 flex-shrink-0 z-40">
+     <div class="flex items-center gap-3">
+         <div class="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg">
+          <div class="w-2 h-2 bg-emerald-400 rounded-full pulse-dot"></div>
+          <span class="text-xs sm:text-sm font-medium text-slate-200" id="current-date"></span>
+         </div>
+         <!-- Indikator Cloud Sync -->
+         <div id="cloud-sync-indicator" class="hidden items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-500">
+             <svg id="sync-icon-spin" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+             <span id="sync-text-status">Cloud Tersinkron</span>
+         </div>
+     </div>
+     <div class="flex items-center gap-2">
+      <button onclick="loadFromCloud()" class="p-2 sm:px-3 sm:py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-white flex items-center gap-2 shadow-md" title="Tarik Data dari Cloud (Jika Terhubung)">
+       <span class="text-sm">🔄</span>
+       <span class="hidden sm:inline text-sm font-bold">Sinkronisasi</span>
+      </button>
+      <button onclick="toggleFullscreen()" id="fullscreen-btn" class="p-2 sm:px-3 sm:py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-700 flex items-center gap-2" title="Toggle Fullscreen">
+       <svg id="fullscreen-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+       <span class="hidden sm:inline text-sm font-bold">Layar Penuh</span>
+      </button>
+     </div>
+    </header>
+
+    <main class="flex-1 overflow-auto scrollbar-thin p-4 sm:p-6 lg:p-8 relative">
+    
+    <!-- Dashboard Tab -->
+    <div id="content-dashboard" class="tab-content fade-in max-w-7xl mx-auto">
+     <div class="flex items-center justify-between mb-6">
+       <div>
+         <h2 class="text-2xl font-bold text-slate-800">Pantau Izin Toilet Hari Ini</h2>
+         <p class="text-slate-500 text-sm mt-1">Pantau pergerakan siswa yang keluar kelas ke toilet secara real-time.</p>
+       </div>
+       <div class="hidden sm:block text-right">
+         <p class="text-sm font-semibold text-slate-600">Total Populasi Siswa</p>
+         <p class="text-2xl font-black text-slate-800" id="total-populasi">0</p>
+       </div>
+     </div>
+     
+     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+      <div class="stat-card rounded-2xl p-5 border-l-4 border-l-amber-500 relative overflow-hidden bg-amber-50/30">
+       <div class="absolute -right-4 -top-4 w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">🚶</span></div>
+       <p class="text-sm font-bold text-amber-700 mb-1">Sedang di Toilet</p>
+       <div class="flex items-baseline gap-2">
+         <p class="text-3xl sm:text-4xl font-black text-amber-600" id="stat-active">0</p>
+         <p class="text-sm font-medium text-amber-600">siswa</p>
+       </div>
+      </div>
+      <div class="stat-card rounded-2xl p-5 border-l-4 border-l-emerald-500 relative overflow-hidden">
+       <div class="absolute -right-4 -top-4 w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">✅</span></div>
+       <p class="text-sm font-semibold text-slate-500 mb-1">Selesai / Kembali</p>
+       <p class="text-3xl sm:text-4xl font-black text-emerald-600" id="stat-returned">0</p>
+      </div>
+      <div class="stat-card rounded-2xl p-5 border-l-4 border-l-blue-500 relative overflow-hidden">
+       <div class="absolute -right-4 -top-4 w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">📊</span></div>
+       <p class="text-sm font-semibold text-slate-500 mb-1">Total Izin Hari Ini</p>
+       <p class="text-3xl sm:text-4xl font-black text-blue-600" id="stat-total-today">0</p>
+      </div>
+      <div class="stat-card rounded-2xl p-5 border-l-4 border-l-red-500 relative overflow-hidden bg-red-50/30">
+       <div class="absolute -right-4 -top-4 w-16 h-16 bg-red-100 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">⏱️</span></div>
+       <p class="text-sm font-bold text-red-700 mb-1">Terlalu Lama (>15m)</p>
+       <p class="text-3xl sm:text-4xl font-black text-red-600" id="stat-warning">0</p>
+      </div>
+     </div>
+
+     <div class="grid lg:grid-cols-2 gap-6 mb-8">
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">📈 Frekuensi Izin per Kelas Hari Ini</h3>
+       <div class="h-64"><canvas id="chart-class"></canvas></div>
+      </div>
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">⏳ Status Saat Ini</h3>
+       <div class="h-64 flex items-center justify-center relative"><canvas id="chart-pie"></canvas></div>
+      </div>
+     </div>
+
+     <!-- Recent Active Records -->
+     <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 border-t-4 border-t-amber-500 mb-8">
+      <div class="flex items-center justify-between mb-6">
+       <h3 class="font-bold text-slate-800 flex items-center gap-2">⚠️ Siswa yang Belum Kembali ke Kelas</h3>
+       <button onclick="switchTab('analysis')" class="text-blue-600 text-sm font-semibold hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">Semua Riwayat</button>
+      </div>
+      <div id="recent-active-records" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-80 overflow-y-auto scrollbar-thin p-2">
+       <!-- Populated by JS -->
+      </div>
+     </div>
+
+     <!-- Akumulasi Seluruh Waktu -->
+     <div class="bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-800 text-white">
+      <h3 class="font-bold text-white mb-6 flex items-center gap-2 text-lg">💡 Rekap Akumulasi Seluruh Waktu</h3>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+       <div class="bg-slate-800 rounded-2xl p-5 border border-slate-700">
+        <p class="text-xs font-bold text-slate-400 uppercase mb-2">Total Izin Tercatat</p><p class="text-3xl font-black" id="summary-total-all">0</p>
+       </div>
+       <div class="bg-blue-500/10 rounded-2xl p-5 border border-blue-500/20">
+        <p class="text-xs font-bold text-blue-400 uppercase mb-2">Total Siswa Terdaftar</p><p class="text-3xl font-black text-blue-400" id="summary-students">0</p>
+       </div>
+       <div class="bg-emerald-500/10 rounded-2xl p-5 border border-emerald-500/20">
+        <p class="text-xs font-bold text-emerald-400 uppercase mb-2">Selesai (Kembali)</p><p class="text-3xl font-black text-emerald-400" id="summary-completed">0</p>
+       </div>
+       <div class="bg-amber-500/10 rounded-2xl p-5 border border-amber-500/20">
+        <p class="text-xs font-bold text-amber-400 uppercase mb-2">Sedang Keluar</p><p class="text-3xl font-black text-amber-400" id="summary-active-all">0</p>
+       </div>
+      </div>
+     </div>
+    </div>
+
+    <!-- Analysis Tab -->
+    <div id="content-analysis" class="tab-content hidden fade-in max-w-7xl mx-auto">
+     <div class="flex justify-end mb-4">
+        <button onclick="exportDataToCSV()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors shadow-md flex items-center gap-2">📥 Download Log (CSV)</button>
+     </div>
+
+     <div class="bg-white rounded-3xl shadow-sm border border-slate-200 mb-6 overflow-hidden">
+       <div class="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+           <div>
+               <h3 class="font-bold text-slate-800 flex items-center gap-2 text-lg">📋 Rekam Jejak Izin Toilet</h3>
+               <p class="text-sm text-slate-500 mt-1">Seluruh riwayat keluar-masuk toilet tercatat di sini.</p>
+           </div>
+           <button onclick="promptClearHistory()" class="px-4 py-2 bg-red-100 text-red-600 rounded-lg text-sm font-bold hover:bg-red-200">⚠️ Hapus Semua Riwayat</button>
+       </div>
+
+       <!-- Filter -->
+       <div class="p-4 bg-white border-b border-slate-100 flex flex-wrap gap-4 items-end">
+           <div>
+               <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Filter Kelas</label>
+               <select id="analysis-filter-class" onchange="updateAnalysisTable()" class="w-40 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500">
+                   <option value="">Semua Kelas</option>
+               </select>
+           </div>
+           <div>
+               <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Filter Tanggal</label>
+               <input type="date" id="analysis-filter-date" onchange="updateAnalysisTable()" class="w-40 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500">
+           </div>
+           <div>
+               <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Filter Status</label>
+               <select id="analysis-filter-status" onchange="updateAnalysisTable()" class="w-40 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500">
+                   <option value="">Semua Status</option>
+                   <option value="keluar">🚶 Sedang di Toilet</option>
+                   <option value="kembali">✅ Sudah Kembali</option>
+               </select>
+           </div>
+           <button onclick="resetAnalysisFilter()" class="px-4 py-2 border border-slate-300 bg-white text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors">Reset</button>
+       </div>
+
+       <div class="overflow-x-auto max-h-[500px] scrollbar-thin">
+         <table class="w-full text-left">
+            <thead class="bg-white sticky top-0 shadow-sm z-10">
+              <tr>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Nama Siswa</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Kelas</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Jam Keluar</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Jam Kembali</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Durasi</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Opsi</th>
+              </tr>
+            </thead>
+            <tbody id="analysis-table-body" class="divide-y divide-slate-100 bg-white">
+               <!-- Populated by JS -->
+            </tbody>
+         </table>
+       </div>
+     </div>
+    </div>
+
+    <!-- QR Generation Tab -->
+    <div id="content-qr" class="tab-content hidden fade-in">
+     <div class="max-w-5xl mx-auto">
+      <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 slide-up">
+       <h2 class="text-2xl font-bold text-slate-800 mb-8 flex items-center gap-2"><span class="text-3xl">💳</span> Produksi Kartu Izin Toilet</h2>
+       <div class="grid md:grid-cols-2 gap-8 lg:gap-12">
+        <div class="space-y-6">
+         <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+           <label class="block text-sm font-bold text-slate-700 mb-3">1. Pilih Kelas</label>
+           <div class="flex gap-3">
+            <select id="qr-class" onchange="loadQRStudents()" class="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white font-medium hover:bg-slate-50"></select>
+            <button onclick="downloadBulkQR()" id="btn-bulk-qr" disabled title="Download QR Satu Kelas (ZIP)" class="px-5 py-3 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 transition-colors flex items-center gap-2 font-bold text-sm shadow-md">
+             📥 <span class="hidden sm:inline">ZIP Sekelas</span>
+            </button>
+           </div>
+         </div>
+         <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+          <label class="block text-sm font-bold text-slate-700 mb-3">2. Pilih Siswa</label>
+          <select id="qr-student" onchange="enableGenerateBtn()" disabled class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-slate-100 disabled:text-slate-400 font-medium"></select>
+         </div>
+         <button onclick="generateQR()" id="btn-generate-qr" disabled class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 disabled:opacity-50 text-lg">Mulai Render QR</button>
+        </div>
+
+        <div class="flex flex-col items-center justify-center p-8 bg-slate-100 border-2 border-dashed border-slate-300 rounded-3xl min-h-[400px] relative">
+         <div id="qr-result-container" class="hidden flex flex-col items-center w-full relative z-10">
+          <div id="qr-card-capture" class="bg-white p-5 rounded-2xl shadow-xl border border-slate-100 mb-6 flex flex-col items-center w-full max-w-[280px] transform transition-transform hover:scale-105">
+           <div class="w-full bg-blue-600 text-white text-center py-2 rounded-t-lg -mt-5 -mx-5 w-[calc(100%+40px)] mb-4 font-black tracking-wider text-sm">KARTU IZIN TOILET</div>
+           <h3 class="font-bold text-slate-800 text-lg mb-1 text-center truncate w-full px-2" id="qr-display-name">Nama</h3>
+           <p class="text-sm font-medium text-slate-500 mb-4 text-center bg-slate-100 px-3 py-1 rounded-full" id="qr-display-class">Kelas</p>
+           <div class="p-2 border-4 border-slate-100 rounded-xl mb-4 bg-white">
+             <img id="qr-image" src="" alt="QR Code" class="mx-auto w-48 h-48">
+           </div>
+           <button onclick="downloadSingleQR()" class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20">📥 Simpan PNG</button>
+          </div>
+         </div>
+         <div id="qr-placeholder" class="text-center text-slate-400 absolute">
+          <span class="text-6xl mb-4 block opacity-50">🪪</span>
+          <p class="font-medium text-lg">Area Tampil Kartu</p><p class="text-sm">Pilih siswa untuk merender QR</p>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+
+    <!-- Scan Tab -->
+    <div id="content-scan" class="tab-content hidden fade-in">
+     <div class="max-w-4xl mx-auto">
+      <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 slide-up">
+       <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-5 border-b border-slate-100 pb-6">
+        <div>
+          <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">📷 Mode Pemindai (Scanner)</h2>
+          <p class="text-slate-500 text-sm mt-1">Sorotkan QR Siswa. Sistem otomatis men-toggle status Keluar/Kembali.</p>
+        </div>
+        <div class="flex gap-2 w-full sm:w-auto">
+         <button onclick="toggleScanner()" id="btn-toggle-scan" class="px-6 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">Mulai Scan Sekarang</button>
+        </div>
+       </div>
+
+       <div class="mb-8 p-5 bg-amber-50 rounded-2xl border border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-bold text-amber-800">📸 Opsi File Gambar</p>
+          <p class="text-xs text-amber-600">Gunakan jika kamera terblokir oleh browser</p>
+        </div>
+        <input type="file" id="qr-file-input" accept="image/*" class="w-full sm:w-auto text-sm file:mr-4 file:py-2.5 file:px-5 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-white file:text-amber-700 file:shadow-sm hover:file:bg-amber-100 cursor-pointer">
+       </div>
+       
+       <div id="scanner-container" class="hidden overflow-hidden rounded-3xl border-8 border-slate-100 bg-slate-900 flex items-center justify-center mb-8 relative shadow-inner">
+        <div id="qr-reader" class="w-full max-w-lg bg-slate-900"></div>
+       </div>
+
+       <!-- Result Card (Hidden default) -->
+       <div id="scan-result-card" class="hidden bg-white border-2 rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden transition-all">
+        <div id="scan-bg-circle" class="absolute -right-10 -top-10 w-40 h-40 rounded-full"></div>
+        <div class="flex justify-between items-start mb-6 relative z-10">
+         <div>
+          <span class="text-xs font-black tracking-wider px-3 py-1.5 rounded-full mb-3 inline-block uppercase" id="scan-label-badge">MEMPROSES...</span>
+          <h3 class="text-3xl font-black text-slate-800 mb-1" id="scan-student-name">-</h3>
+          <p class="text-slate-500 font-bold bg-slate-100 inline-block px-3 py-1 rounded-lg" id="scan-student-class">-</p>
+         </div>
+         <button onclick="resetScanResult()" class="text-slate-400 hover:text-slate-800 text-2xl font-bold" id="close-scan-btn">✕</button>
+        </div>
+       </div>
+       
+       <div id="scan-idle-state" class="text-center py-16 text-slate-400 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+        <span class="text-6xl mb-4 block opacity-50">📷</span>
+        <h3 class="font-bold text-xl text-slate-700 mb-2">Scanner Belum Aktif</h3>
+        <p class="font-medium">Klik tombol <strong>Mulai Scan Sekarang</strong> di atas untuk membaca QR Siswa</p>
+       </div>
+      </div>
+     </div>
+    </div>
+
+    <!-- Admin Pengelolaan Siswa Tab -->
+    <div id="content-admin" class="tab-content hidden fade-in">
+     <div class="max-w-6xl mx-auto">
+      
+      <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 slide-up">
+       <div class="mb-8 border-b border-slate-100 pb-6 flex justify-between items-center flex-wrap gap-4">
+         <div>
+           <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">⚙️ Kelola Data Siswa & Kelas</h2>
+           <p class="text-slate-500 text-sm mt-1">Tambah atau hapus data master siswa.</p>
+         </div>
+         <button onclick="promptFactoryReset()" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold shadow hover:bg-red-700">Factory Reset (Hapus Semua Data)</button>
+       </div>
+
+       <!-- Form Add Class -->
+       <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+           <h3 class="font-bold text-slate-700 mb-4">Tambahkan Kelas Baru</h3>
+           <div class="flex gap-4">
+               <input type="text" id="admin-new-class" placeholder="Contoh: X MIPA 1" class="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500">
+               <button onclick="addClass()" class="px-6 py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700">Tambah Kelas</button>
+           </div>
+       </div>
+
+       <!-- Form Add Student -->
+       <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+           <h3 class="font-bold text-slate-700 mb-4">Tambahkan Siswa Baru</h3>
+           <div class="grid md:grid-cols-3 gap-4">
+               <input type="text" id="admin-student-name" placeholder="Nama Lengkap Siswa" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500">
+               <select id="admin-student-class" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"></select>
+               <button onclick="addStudent()" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow flex items-center justify-center gap-2">➕ Tambah Siswa</button>
+           </div>
+       </div>
+
+       <!-- Form Input Massal CSV -->
+       <div class="bg-white p-6 rounded-2xl border-2 border-dashed border-blue-200 mb-8 relative overflow-hidden">
+           <div class="absolute -right-10 -top-10 w-32 h-32 bg-blue-50 rounded-full"></div>
+           <h3 class="font-bold text-slate-800 mb-2 relative z-10 flex items-center gap-2">📄 Input Massal Siswa (File CSV)</h3>
+           <p class="text-sm text-slate-500 mb-5 relative z-10">Unduh template, isi dengan data siswa (Nama & Kelas), lalu unggah kembali untuk menambahkan banyak siswa sekaligus.</p>
+           
+           <div class="flex flex-col md:flex-row gap-4 items-center relative z-10">
+               <button onclick="downloadCSVTemplate()" class="w-full md:w-auto px-5 py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 flex items-center justify-center gap-2 transition-colors">
+                   📥 Download Template
+               </button>
+               
+               <div class="w-full flex-1 flex flex-col sm:flex-row items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                   <input type="file" id="csv-file-input" accept=".csv" class="w-full px-2 text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 cursor-pointer">
+                   <button onclick="uploadCSV()" class="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 flex-shrink-0 shadow-md shadow-emerald-500/20 transition-colors">
+                       📤 Upload & Proses
+                   </button>
+               </div>
+           </div>
+       </div>
+
+       <!-- Table Students -->
+       <h3 class="font-bold text-slate-800 mb-4 text-lg">Daftar Siswa Terdaftar</h3>
+       <div class="overflow-x-auto max-h-96 scrollbar-thin rounded-xl border border-slate-200">
+         <table class="w-full text-left">
+            <thead class="bg-slate-100 sticky top-0 z-10">
+              <tr>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">ID / Kode</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Nama Lengkap</th>
+                <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Kelas</th>
+                <th class="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="admin-student-table-body" class="divide-y divide-slate-100 bg-white">
+               <!-- Populated by JS -->
+            </tbody>
+         </table>
+       </div>
+      </div>
+     </div>
+    </div>
+
+    <footer class="mt-8 pt-6 pb-2 border-t border-slate-200 text-center w-full fade-in">
+      <p class="text-xs font-medium text-slate-400">&copy; 2026 Noviyalpg Creative. Semua Hak Cipta Dilindungi.</p>
+    </footer>
+
+   </main>
+  </div>
+ </div>
+
+  <!-- Container Toast -->
+  <div id="toast-container"></div>
+
+  <!-- JavaScript Application Logic -->
+  <script>
+    /* =========================================
+       1. DATA MANAGEMENT (MOCK DATABASE & CLOUD SYNC)
+       ========================================= */
+    
+    const defaultClasses = ["VII-A", "VII-B", "VIII-A", "IX-A"];
+    const defaultStudents = [
+        { id: "S001", name: "Budi Santoso", classId: "VII-A" },
+        { id: "S002", name: "Siti Aminah", classId: "VII-A" },
+        { id: "S003", name: "Andi Darmawan", classId: "VII-B" },
+        { id: "S004", name: "Rina Wijaya", classId: "VIII-A" }
+    ];
+
+    let dbClasses = JSON.parse(localStorage.getItem('qrizto_classes')) || defaultClasses;
+    let dbStudents = JSON.parse(localStorage.getItem('qrizto_students')) || defaultStudents;
+    let dbToilet = JSON.parse(localStorage.getItem('qrizto_toilet')) || [];
+    
+    // Cloud Settings (URL Hardcoded Default)
+    const gasCloudUrl = "https://script.google.com/macros/s/AKfycbzk0yfI_gRLanT_lta0otQMAwke1J0NA7KDQCsdBMGm4hQl1-6aT45OAt7CfjN6D4F7/exec";
+    let isSyncing = false;
+
+    // Menjalankan fungsi save dan trigger sync
+    function saveData() {
+        localStorage.setItem('qrizto_classes', JSON.stringify(dbClasses));
+        localStorage.setItem('qrizto_students', JSON.stringify(dbStudents));
+        localStorage.setItem('qrizto_toilet', JSON.stringify(dbToilet));
+        syncToCloudBackground(); // Auto sync
+    }
+
+    function generateId() {
+        return 'S' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    }
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type === 'error' ? 'bg-red-600' : (type === 'warning' ? 'bg-amber-500' : 'bg-slate-800')}`;
+        toast.innerHTML = `<span class="text-xl">${type === 'error' ? '❌' : (type === 'warning' ? '⚠️' : '✅')}</span> ${message}`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    /* =========================================
+       1.5 GOOGLE APPS SCRIPT CLOUD SYNC LOGIC
+       ========================================= */
+
+    // Fungsi update UI status sync
+    function setSyncUI(status) {
+        const indicator = document.getElementById('cloud-sync-indicator');
+        const icon = document.getElementById('sync-icon-spin');
+        const text = document.getElementById('sync-text-status');
+        
+        if(!gasCloudUrl) {
+            indicator.classList.add('hidden');
+            return;
+        }
+        
+        indicator.classList.remove('hidden');
+        if (status === 'syncing') {
+            icon.classList.add('animate-spin', 'text-amber-500');
+            icon.classList.remove('text-emerald-500', 'text-red-500');
+            text.innerText = "Menyinkronkan...";
+        } else if (status === 'success') {
+            icon.classList.remove('animate-spin', 'text-amber-500', 'text-red-500');
+            icon.classList.add('text-emerald-500');
+            text.innerText = "Tersinkron (Online)";
+        } else if (status === 'error') {
+            icon.classList.remove('animate-spin', 'text-amber-500', 'text-emerald-500');
+            icon.classList.add('text-red-500');
+            text.innerText = "Gagal (Offline)";
+        }
+    }
+
+    // Mendorong data ke Spreadsheet
+    async function syncToCloudBackground() {
+        if (!gasCloudUrl || isSyncing) return;
+        isSyncing = true;
+        setSyncUI('syncing');
+
+        try {
+            const payload = {
+                action: "save",
+                data: { "Classes": dbClasses, "Students": dbStudents, "Toilet": dbToilet }
+            };
+
+            // GAS Web App menerima fetch POST lebih baik menggunakan text/plain utk menghindari preflight CORS
+            await fetch(gasCloudUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            setSyncUI('success');
+        } catch(e) {
+            console.error("Cloud Sync Error", e);
+            setSyncUI('error');
+        } finally {
+            isSyncing = false;
+        }
+    }
+
+    // Menarik data dari Spreadsheet
+    async function loadFromCloud() {
+        if (!gasCloudUrl) {
+            location.reload(); // Jika mode offline, refresh biasa saja
+            return;
+        }
+
+        setSyncUI('syncing');
+        showToast("Menarik data dari Cloud DB...", "warning");
+        
+        try {
+            const response = await fetch(gasCloudUrl + "?action=load");
+            const json = await response.json();
+            
+            if (json.status === "success" && json.data) {
+                if(json.data.Classes) dbClasses = json.data.Classes;
+                if(json.data.Students) dbStudents = json.data.Students;
+                if(json.data.Toilet) dbToilet = json.data.Toilet;
+                
+                // Simpan ke local tanpa memicu syncToCloud() lagi
+                localStorage.setItem('qrizto_classes', JSON.stringify(dbClasses));
+                localStorage.setItem('qrizto_students', JSON.stringify(dbStudents));
+                localStorage.setItem('qrizto_toilet', JSON.stringify(dbToilet));
+                
+                setSyncUI('success');
+                showToast("Berhasil tersinkronisasi dengan Cloud!", "success");
+                
+                // Perbarui antarmuka yang sedang aktif
+                updateDashboard();
+                updateAnalysisTable();
+                updateAdminTable();
+            } else {
+                throw new Error("Format JSON tidak valid");
+            }
+        } catch (e) {
+            console.error(e);
+            setSyncUI('error');
+            showToast("Gagal terkoneksi ke Cloud DB. Menggunakan memori lokal.", "error");
+            updateDashboard(); // fallback render dengan data yang ada
+        }
+    }
+
+    /* =========================================
+       2. CUSTOM CONFIRM MODAL LOGIC (PASSWORD PROTECTED)
+       ========================================= */
+    let confirmCallback = null;
+    let expectedPassword = null;
+
+    function openPasswordModal(title, message, password, onConfirm) {
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-message').innerText = message;
+        
+        const pwdArea = document.getElementById('confirm-password-area');
+        const pwdInput = document.getElementById('confirm-password-input');
+        
+        pwdArea.classList.remove('hidden');
+        pwdInput.value = '';
+        document.getElementById('confirm-password-error').classList.add('hidden');
+        
+        expectedPassword = password;
+        confirmCallback = onConfirm;
+        document.getElementById('custom-confirm-modal').classList.remove('hidden');
+        pwdInput.focus();
+    }
+
+    function openConfirmModal(title, message, onConfirm) {
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-message').innerText = message;
+        document.getElementById('confirm-password-area').classList.add('hidden');
+        expectedPassword = null;
+        confirmCallback = onConfirm;
+        document.getElementById('custom-confirm-modal').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('custom-confirm-modal').classList.add('hidden');
+        confirmCallback = null;
+        expectedPassword = null;
+    }
+
+    document.getElementById('confirm-action-btn').addEventListener('click', () => {
+        if(expectedPassword) {
+            const pwdInput = document.getElementById('confirm-password-input').value;
+            if(pwdInput !== expectedPassword) {
+                document.getElementById('confirm-password-error').classList.remove('hidden');
+                return;
+            }
+        }
+        
+        if(confirmCallback) confirmCallback();
+        closeConfirmModal();
+    });
+
+    /* =========================================
+       3. UI INITIALIZATION & UTILS
+       ========================================= */
+    
+    // Update Clock
+    setInterval(() => {
+        const now = new Date();
+        document.getElementById('current-date').innerText = now.toLocaleString('id-ID', {
+            weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        
+        if(!document.getElementById('content-dashboard').classList.contains('hidden')) {
+            updateWarningCounter();
+        }
+    }, 10000);
+
+    // Kunci Akses Admin
+    let adminUnlocked = false;
+    function checkAdminAccess() {
+        if (adminUnlocked) {
+            switchTab('admin');
+        } else {
+            openPasswordModal("Akses Administrator", "Masukkan sandi admin untuk mengakses menu Kelola Siswa.", "admin31", () => {
+                adminUnlocked = true;
+                switchTab('admin');
+                showToast("Akses menu dikabulkan", "success");
+            });
+        }
+    }
+
+    // Tab Switching
+    function switchTab(tabId) {
+        if(tabId !== 'scan' && html5QrCode && html5QrCode.isScanning) toggleScanner();
+
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.tab-btn').forEach(el => {
+            el.classList.remove('active', 'bg-blue-50', 'text-blue-600', 'font-bold');
+            el.classList.add('text-slate-500', 'hover:bg-slate-50', 'font-semibold');
+        });
+        
+        document.getElementById(`content-${tabId}`).classList.remove('hidden');
+        const activeBtn = document.getElementById(`tab-${tabId}`);
+        activeBtn.classList.remove('text-slate-500', 'hover:bg-slate-50', 'font-semibold');
+        activeBtn.classList.add('active', 'bg-blue-50', 'text-blue-600', 'font-bold');
+
+        if(tabId === 'dashboard') updateDashboard();
+        if(tabId === 'analysis') updateAnalysisTable();
+        if(tabId === 'qr') populateClassDropdowns();
+        if(tabId === 'admin') updateAdminTable();
+    }
+
+    function populateClassDropdowns() {
+        const selects = ['qr-class', 'admin-student-class', 'analysis-filter-class'];
+        selects.forEach(id => {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const currentVal = el.value;
+            let options = id === 'analysis-filter-class' ? `<option value="">Semua Kelas</option>` : `<option value="">Pilih Kelas...</option>`;
+            dbClasses.forEach(c => options += `<option value="${c}">${c}</option>`);
+            el.innerHTML = options;
+            el.value = currentVal || "";
+        });
+    }
+
+    /* =========================================
+       4. DASHBOARD TAB & CHARTS
+       ========================================= */
+    
+    let chartClassInstance = null;
+    let chartPieInstance = null;
+
+    function updateDashboard() {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayRecords = dbToilet.filter(a => a.date === todayStr);
+        
+        const activeRecords = todayRecords.filter(r => r.status === 'keluar');
+        const returnedRecords = todayRecords.filter(r => r.status === 'kembali');
+        
+        document.getElementById('total-populasi').innerText = dbStudents.length;
+        document.getElementById('stat-active').innerText = activeRecords.length;
+        document.getElementById('stat-returned').innerText = returnedRecords.length;
+        document.getElementById('stat-total-today').innerText = todayRecords.length;
+        
+        updateWarningCounter(activeRecords);
+
+        const recentContainer = document.getElementById('recent-active-records');
+        recentContainer.innerHTML = '';
+        if(activeRecords.length === 0) {
+            recentContainer.innerHTML = `<div class="col-span-full text-center py-8 text-slate-400"><span class="text-4xl mb-2 block">📭</span><p>Saat ini tidak ada siswa di toilet.</p></div>`;
+        } else {
+            const sortedRecords = [...activeRecords].sort((a,b) => new Date(a.timeOut) - new Date(b.timeOut));
+            sortedRecords.forEach(r => {
+                const student = dbStudents.find(s => s.id === r.studentId) || {name: 'Unknown', classId: 'Unknown'};
+                const timeOut = new Date(r.timeOut);
+                const timeStr = timeOut.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
+                
+                const diffMins = Math.floor((new Date() - timeOut) / 60000);
+                const isWarning = diffMins > 15;
+                
+                recentContainer.innerHTML += `
+                    <div class="flex items-center gap-3 p-3 ${isWarning ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'} rounded-xl border">
+                        <div class="text-2xl">${isWarning ? '🚨' : '🚶'}</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-bold ${isWarning ? 'text-red-800' : 'text-slate-800'} truncate">${student.name}</p>
+                            <p class="text-xs text-slate-500">${student.classId} • Keluar: ${timeStr} <span class="font-bold ${isWarning ? 'text-red-600' : 'text-amber-600'}">(${diffMins}m)</span></p>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        document.getElementById('summary-total-all').innerText = dbToilet.length;
+        document.getElementById('summary-students').innerText = dbStudents.length;
+        document.getElementById('summary-completed').innerText = dbToilet.filter(r => r.status === 'kembali').length;
+        document.getElementById('summary-active-all').innerText = dbToilet.filter(r => r.status === 'keluar').length;
+
+        renderCharts(todayRecords, activeRecords.length, returnedRecords.length);
+    }
+
+    function updateWarningCounter(activeRecords = null) {
+        if(!activeRecords) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            activeRecords = dbToilet.filter(a => a.date === todayStr && a.status === 'keluar');
+        }
+        let warnings = 0;
+        const now = new Date();
+        activeRecords.forEach(r => {
+            if((now - new Date(r.timeOut)) > 15 * 60000) warnings++;
+        });
+        document.getElementById('stat-warning').innerText = warnings;
+    }
+
+    function renderCharts(todayRecords, activeCount, returnedCount) {
+        const pieCtx = document.getElementById('chart-pie');
+        if(chartPieInstance) chartPieInstance.destroy();
+        chartPieInstance = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Sedang di Toilet', 'Sudah Kembali'],
+                datasets: [{
+                    data: [activeCount, returnedCount],
+                    backgroundColor: ['#f59e0b', '#10b981'],
+                    borderWidth: 0
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+
+        const classStats = {};
+        dbClasses.forEach(c => classStats[c] = 0);
+        
+        todayRecords.forEach(r => {
+            const s = dbStudents.find(x => x.id === r.studentId);
+            if(s && classStats[s.classId] !== undefined) classStats[s.classId]++;
+        });
+
+        const classLabels = Object.keys(classStats);
+        const classData = classLabels.map(c => classStats[c]);
+
+        const classCtx = document.getElementById('chart-class');
+        if(chartClassInstance) chartClassInstance.destroy();
+        chartClassInstance = new Chart(classCtx, {
+            type: 'bar',
+            data: {
+                labels: classLabels,
+                datasets: [
+                    { label: 'Total Izin', data: classData, backgroundColor: '#3b82f6', borderRadius: 4 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    /* =========================================
+       5. ANALYSIS TAB
+       ========================================= */
+
+    function updateAnalysisTable() {
+        const filterClass = document.getElementById('analysis-filter-class').value;
+        const filterDate = document.getElementById('analysis-filter-date').value;
+        const filterStatus = document.getElementById('analysis-filter-status').value;
+
+        const tbody = document.getElementById('analysis-table-body');
+        
+        let filteredData = dbToilet.map(a => {
+            const student = dbStudents.find(s => s.id === a.studentId) || {name: 'Terhapus', classId: '-'};
+            return { ...a, studentName: student.name, classId: student.classId };
+        });
+
+        if(filterClass) filteredData = filteredData.filter(a => a.classId === filterClass);
+        if(filterDate) filteredData = filteredData.filter(a => a.date === filterDate);
+        if(filterStatus) filteredData = filteredData.filter(a => a.status === filterStatus);
+
+        filteredData.sort((a, b) => new Date(b.timeOut) - new Date(a.timeOut));
+
+        tbody.innerHTML = '';
+        if(filteredData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400">Tidak ada riwayat izin.</td></tr>`;
+        } else {
+            filteredData.forEach(r => {
+                const outDate = new Date(r.timeOut);
+                const outTimeStr = outDate.toLocaleString('id-ID', {day:'numeric', month:'short', hour: '2-digit', minute:'2-digit'});
+                
+                let inTimeStr = '-';
+                let durationStr = '-';
+                
+                if(r.timeIn) {
+                    const inDate = new Date(r.timeIn);
+                    inTimeStr = inDate.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
+                    const diffMins = Math.floor((inDate - outDate) / 60000);
+                    durationStr = `${diffMins} mnt`;
+                } else {
+                    const diffMins = Math.floor((new Date() - outDate) / 60000);
+                    durationStr = `<span class="text-amber-500 animate-pulse">${diffMins} mnt (Berjalan)</span>`;
+                }
+
+                let statusBadge = r.status === 'kembali' 
+                    ? '<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-bold">✅ Kembali</span>'
+                    : '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-md text-xs font-bold">🚶 Keluar</span>';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="px-6 py-4 font-semibold text-slate-800">${r.studentName}</td>
+                        <td class="px-6 py-4 text-slate-600">${r.classId}</td>
+                        <td class="px-6 py-4 text-slate-500 text-sm">${outTimeStr}</td>
+                        <td class="px-6 py-4 text-slate-500 text-sm">${inTimeStr}</td>
+                        <td class="px-6 py-4 text-slate-800 text-sm font-medium">${durationStr}</td>
+                        <td class="px-6 py-4">${statusBadge}</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="promptDeleteRecord('${r.id}')" class="text-red-500 hover:text-red-700 p-2" title="Hapus Data">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+    }
+
+    function resetAnalysisFilter() {
+        document.getElementById('analysis-filter-class').value = '';
+        document.getElementById('analysis-filter-date').value = '';
+        document.getElementById('analysis-filter-status').value = '';
+        updateAnalysisTable();
+    }
+
+    function promptDeleteRecord(id) {
+        openConfirmModal("Hapus Riwayat", "Yakin ingin menghapus record izin ini?", () => {
+            dbToilet = dbToilet.filter(a => a.id !== id);
+            saveData();
+            updateAnalysisTable();
+            showToast("Riwayat dihapus");
+        });
+    }
+
+    function promptClearHistory() {
+        openPasswordModal("Hapus Semua Riwayat", "PERINGATAN! Anda akan menghapus SEMUA data riwayat izin toilet. Lanjutkan?", "admin31", () => {
+            dbToilet = [];
+            saveData();
+            updateAnalysisTable();
+            showToast("Semua riwayat telah dibersihkan.");
+        });
+    }
+
+    function exportDataToCSV() {
+        if(dbToilet.length === 0) {
+            showToast("Tidak ada data untuk diunduh", "error"); return;
+        }
+        let csvContent = "data:text/csv;charset=utf-8,ID,Nama_Siswa,Kelas,Tanggal,Status,Waktu_Keluar,Waktu_Kembali\n";
+        
+        dbToilet.forEach(r => {
+            const student = dbStudents.find(s => s.id === r.studentId) || {name: 'N/A', classId: 'N/A'};
+            csvContent += `${r.id},"${student.name}","${student.classId}",${r.date},${r.status},${r.timeOut},${r.timeIn || 'Belum'}\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Riwayat_Toilet_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    /* =========================================
+       6. QR GENERATOR TAB
+       ========================================= */
+
+    function loadQRStudents() {
+        const classId = document.getElementById('qr-class').value;
+        const studentSelect = document.getElementById('qr-student');
+        const bulkBtn = document.getElementById('btn-bulk-qr');
+        
+        studentSelect.innerHTML = '<option value="">-- Pilih Siswa --</option>';
+        if(!classId) {
+            studentSelect.disabled = true; bulkBtn.disabled = true;
+            document.getElementById('btn-generate-qr').disabled = true;
+            return;
+        }
+
+        const students = dbStudents.filter(s => s.classId === classId);
+        students.forEach(s => {
+            studentSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+        
+        studentSelect.disabled = false;
+        bulkBtn.disabled = students.length === 0;
+    }
+
+    function enableGenerateBtn() {
+        document.getElementById('btn-generate-qr').disabled = !document.getElementById('qr-student').value;
+    }
+
+    function getBaseUrl() {
+        return window.location.href.split('?')[0];
+    }
+
+    function createQRDataURL(text) {
+        const qr = new QRious({ value: text, size: 250, level: 'H' });
+        return qr.toDataURL('image/png');
+    }
+
+    function generateQR() {
+        const studentId = document.getElementById('qr-student').value;
+        if(!studentId) return;
+
+        const student = dbStudents.find(s => s.id === studentId);
+        
+        document.getElementById('qr-placeholder').classList.add('hidden');
+        document.getElementById('qr-result-container').classList.remove('hidden');
+
+        document.getElementById('qr-display-name').innerText = student.name;
+        document.getElementById('qr-display-class').innerText = student.classId;
+
+        const scanUrl = `${getBaseUrl()}?scan=${student.id}`;
+        document.getElementById('qr-image').src = createQRDataURL(scanUrl);
+    }
+
+    function downloadSingleQR() {
+        const name = document.getElementById('qr-display-name').innerText;
+        const img = document.getElementById('qr-image').src;
+        const link = document.createElement("a");
+        link.href = img;
+        link.download = `QR_Toilet_${name.replace(/\s+/g, '_')}.png`;
+        link.click();
+    }
+
+    async function downloadBulkQR() {
+        const classId = document.getElementById('qr-class').value;
+        const students = dbStudents.filter(s => s.classId === classId);
+        
+        if(students.length === 0) return;
+        showToast("Memproses pembuatan ZIP...", "success");
+
+        const zip = new JSZip();
+        const folder = zip.folder(`QR_Toilet_${classId}`);
+
+        students.forEach(s => {
+            const scanUrl = `${getBaseUrl()}?scan=${s.id}`;
+            const dataUrl = createQRDataURL(scanUrl);
+            const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
+            folder.file(`QR_${s.name.replace(/\s+/g, '_')}.png`, base64Data, {base64: true});
+        });
+
+        zip.generateAsync({type:"blob"}).then(function(content) {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(content);
+            link.download = `QR_Toilet_${classId}.zip`;
+            link.click();
+            showToast(`Selesai! ZIP QR Kelas ${classId} terunduh.`);
+        });
+    }
+
+    /* =========================================
+       7. SCANNER TAB (SMART TOILET SCAN)
+       ========================================= */
+    
+    let html5QrCode = null;
+    let isProcessingScan = false;
+
+    function toggleScanner() {
+        const containerEl = document.getElementById('scanner-container');
+        const idleEl = document.getElementById('scan-idle-state');
+        const btn = document.getElementById('btn-toggle-scan');
+        const resultCard = document.getElementById('scan-result-card');
+
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
+                containerEl.classList.add('hidden');
+                idleEl.classList.remove('hidden');
+                btn.innerText = "Mulai Scan Sekarang";
+                btn.classList.replace('bg-red-600', 'bg-blue-600');
+            }).catch(err => console.log(err));
+        } else {
+            idleEl.classList.add('hidden');
+            resultCard.classList.add('hidden');
+            containerEl.classList.remove('hidden');
+            btn.innerText = "Hentikan Kamera";
+            btn.classList.replace('bg-blue-600', 'bg-red-600');
+
+            if(!html5QrCode) html5QrCode = new Html5Qrcode("qr-reader");
+            
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                onScanSuccess,
+                (err) => { /* ignore minor errors */ }
+            ).catch(err => {
+                showToast("Kamera diblokir atau tidak ditemukan. Gunakan opsi File Gambar.", "error");
+                toggleScanner(); // reset ui
+            });
+        }
+    }
+
+    document.getElementById('qr-file-input').addEventListener('change', e => {
+        if(e.target.files.length === 0) return;
+        const file = e.target.files[0];
+        
+        if(!html5QrCode) html5QrCode = new Html5Qrcode("qr-reader");
+        html5QrCode.scanFile(file, true)
+            .then(decodedText => { onScanSuccess(decodedText); })
+            .catch(err => { showToast("QR Code tidak terbaca di gambar ini.", "error"); });
+        e.target.value = "";
+    });
+
+    function onScanSuccess(decodedText) {
+        if(isProcessingScan) return;
+        isProcessingScan = true;
+
+        let studentId = decodedText;
+        if(decodedText.includes('?scan=')) {
+            const urlParams = new URLSearchParams(decodedText.split('?')[1]);
+            studentId = urlParams.get('scan');
+        }
+
+        if(html5QrCode && html5QrCode.isScanning) html5QrCode.pause();
+
+        processScannedData(studentId);
+    }
+
+    function processScannedData(dataText) {
+        const resultCard = document.getElementById('scan-result-card');
+        const badge = document.getElementById('scan-label-badge');
+        const bgCircle = document.getElementById('scan-bg-circle');
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        const student = dbStudents.find(s => s.id === dataText);
+        
+        if(!student) {
+            showToast("QR Code Tidak Dikenali", "error");
+            resumeScannerAfterDelay();
+            return;
+        }
+
+        document.getElementById('scan-student-name').innerText = student.name;
+        document.getElementById('scan-student-class').innerText = student.classId;
+        
+        const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar' && r.date === todayStr);
+
+        resultCard.classList.remove('hidden');
+
+        if (activeRecordIndex !== -1) {
+            // SISWA KEMBALI
+            dbToilet[activeRecordIndex].status = 'kembali';
+            dbToilet[activeRecordIndex].timeIn = new Date().toISOString();
+            
+            resultCard.classList.replace('border-amber-500', 'border-emerald-500') || resultCard.classList.add('border-emerald-500');
+            bgCircle.className = "absolute -right-10 -top-10 w-40 h-40 rounded-full bg-emerald-50";
+            badge.innerText = "IZIN SELESAI (KEMBALI)";
+            badge.className = "text-xs font-black tracking-wider text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-full mb-3 inline-block uppercase";
+            
+            showToast(`${student.name} berhasil ditandai KEMBALI.`, "success");
+        } else {
+            // SISWA KELUAR
+            dbToilet.push({
+                id: 'T' + Date.now() + Math.floor(Math.random()*100),
+                studentId: student.id,
+                date: todayStr,
+                timeOut: new Date().toISOString(),
+                timeIn: null,
+                status: 'keluar'
+            });
+
+            resultCard.classList.replace('border-emerald-500', 'border-amber-500') || resultCard.classList.add('border-amber-500');
+            bgCircle.className = "absolute -right-10 -top-10 w-40 h-40 rounded-full bg-amber-50";
+            badge.innerText = "SEDANG KELUAR";
+            badge.className = "text-xs font-black tracking-wider text-amber-700 bg-amber-100 px-3 py-1.5 rounded-full mb-3 inline-block uppercase";
+            
+            showToast(`${student.name} DIIZINKAN KELUAR.`, "warning");
+        }
+
+        saveData();
+        resumeScannerAfterDelay(3000);
+    }
+
+    function resumeScannerAfterDelay(ms = 2000) {
+        setTimeout(() => {
+            document.getElementById('scan-result-card').classList.add('hidden');
+            if(html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.resume();
+            }
+            isProcessingScan = false;
+        }, ms);
+    }
+
+    function resetScanResult() {
+        document.getElementById('scan-result-card').classList.add('hidden');
+        if(html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.resume();
+        }
+        isProcessingScan = false;
+    }
+
+    /* =========================================
+       8. ADMIN TAB
+       ========================================= */
+
+    function updateAdminTable() {
+        populateClassDropdowns();
+        const tbody = document.getElementById('admin-student-table-body');
+        tbody.innerHTML = '';
+
+        if(dbStudents.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-400">Belum ada data siswa.</td></tr>`;
+            return;
+        }
+
+        const sortedStudents = [...dbStudents].sort((a,b) => {
+            if(a.classId === b.classId) return a.name.localeCompare(b.name);
+            return a.classId.localeCompare(b.classId);
+        });
+
+        sortedStudents.forEach(s => {
+            tbody.innerHTML += `
+                <tr class="hover:bg-slate-50 border-b border-slate-100">
+                    <td class="px-6 py-4 text-xs font-mono text-slate-500">${s.id}</td>
+                    <td class="px-6 py-4 font-bold text-slate-800">${s.name}</td>
+                    <td class="px-6 py-4 text-slate-600">
+                        <span class="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold">${s.classId}</span>
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <button onclick="promptDeleteStudent('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded-lg font-bold text-xs transition-colors">Hapus</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    function addClass() {
+        const className = document.getElementById('admin-new-class').value.trim();
+        if(!className) return;
+        if(dbClasses.includes(className)) {
+            showToast("Kelas sudah ada!", "error"); return;
+        }
+        dbClasses.push(className);
+        saveData();
+        document.getElementById('admin-new-class').value = '';
+        showToast(`Kelas ${className} berhasil ditambahkan`);
+        updateAdminTable();
+    }
+
+    function addStudent() {
+        const name = document.getElementById('admin-student-name').value.trim();
+        const classId = document.getElementById('admin-student-class').value;
+        if(!name || !classId) {
+            showToast("Mohon lengkapi nama dan kelas", "error"); return;
+        }
+
+        dbStudents.push({ id: generateId(), name, classId });
+        saveData();
+        document.getElementById('admin-student-name').value = '';
+        showToast("Siswa berhasil ditambahkan!");
+        updateAdminTable();
+    }
+
+    function promptDeleteStudent(id) {
+        openConfirmModal("Hapus Data Siswa", "Hapus siswa ini? Histori izin mereka tidak akan terhapus namun namanya tidak dikenali.", () => {
+            dbStudents = dbStudents.filter(s => s.id !== id);
+            saveData();
+            updateAdminTable();
+            showToast("Siswa dihapus");
+        });
+    }
+
+    function promptFactoryReset() {
+        openPasswordModal("FACTORY RESET", "PERINGATAN KERAS! Ini akan mengembalikan aplikasi ke kondisi kosong. Semua Kelas, Siswa, dan Histori terhapus permanen. Lanjutkan?", "admin31", () => {
+            localStorage.removeItem('qrizto_classes');
+            localStorage.removeItem('qrizto_students');
+            localStorage.removeItem('qrizto_toilet');
+            location.reload();
+        });
+    }
+
+    /* =========================================
+       CSV UPLOAD & DOWNLOAD LOGIC
+       ========================================= */
+
+    function downloadCSVTemplate() {
+        const csvContent = "Nama Lengkap,Kelas\nBudi Santoso,VII-A\nSiti Aminah,VII-A\nAndi Darmawan,VIII-B\n";
+        const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "Template_Siswa.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function uploadCSV() {
+        const fileInput = document.getElementById('csv-file-input');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            showToast("Pilih file CSV terlebih dahulu!", "error");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const rows = text.split(/\r?\n/);
+            let addedCount = 0;
+
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i].trim();
+                if (!row) continue;
+
+                const columns = row.split(',');
+                if (columns.length >= 2) {
+                    const name = columns[0].replace(/^"|"$/g, '').trim();
+                    const className = columns[1].replace(/^"|"$/g, '').trim();
+
+                    if (name && className) {
+                        if (!dbClasses.includes(className)) {
+                            dbClasses.push(className);
+                        }
+                        dbStudents.push({ id: generateId(), name: name, classId: className });
+                        addedCount++;
+                    }
+                }
+            }
+
+            if (addedCount > 0) {
+                saveData();
+                updateAdminTable();
+                fileInput.value = '';
+                showToast(`Berhasil menambahkan ${addedCount} siswa baru dari CSV!`, "success");
+            } else {
+                showToast("Gagal! Pastikan format CSV benar (Nama Lengkap, Kelas).", "error");
+            }
+        };
+
+        reader.readAsText(file);
+    }
+
+    function refreshData() {
+        loadFromCloud(); // jika online tarik data, jika tidak refresh page
+    }
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => console.log(err));
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    /* =========================================
+       9. DIRECT SCAN LOGIC (On Load Check URL)
+       ========================================= */
+    
+    window.onload = function() {
+        // Otomatis menarik data background dari Cloud DB saat aplikasi dibuka
+        loadFromCloud();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const scanId = urlParams.get('scan');
+
+        if(scanId) {
+            document.getElementById('app').classList.add('hidden');
+            const overlay = document.getElementById('student-direct-scan-screen');
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+
+            setTimeout(() => {
+                const student = dbStudents.find(s => s.id === scanId);
+                const title = document.getElementById('direct-scan-title');
+                const desc = document.getElementById('direct-scan-desc');
+                const icon = document.getElementById('direct-scan-icon');
+                const closeBtn = document.getElementById('direct-scan-close');
+                const todayStr = new Date().toISOString().split('T')[0];
+
+                if(student) {
+                    const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar' && r.date === todayStr);
+                    
+                    if (activeRecordIndex !== -1) {
+                        // Kembali
+                        dbToilet[activeRecordIndex].status = 'kembali';
+                        dbToilet[activeRecordIndex].timeIn = new Date().toISOString();
+                        
+                        title.innerText = "Izin Selesai ✅";
+                        title.classList.replace('text-slate-800', 'text-emerald-600');
+                        desc.innerHTML = `Terima kasih, <strong>${student.name}</strong>.<br>Anda telah kembali ke kelas.`;
+                        icon.innerHTML = `<div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-3xl">👍</div>`;
+                    } else {
+                        // Keluar
+                        dbToilet.push({
+                            id: 'T' + Date.now() + Math.floor(Math.random()*100),
+                            studentId: student.id,
+                            date: todayStr,
+                            timeOut: new Date().toISOString(),
+                            timeIn: null,
+                            status: 'keluar'
+                        });
+                        title.innerText = "Diizinkan Keluar 🚶";
+                        title.classList.replace('text-slate-800', 'text-amber-600');
+                        desc.innerHTML = `<strong>${student.name}</strong>,<br>Silakan menuju toilet. Ingat waktu!`;
+                        icon.innerHTML = `<div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl">⏱️</div>`;
+                    }
+                    saveData();
+                } else {
+                    title.innerText = "Gagal ❌";
+                    title.classList.replace('text-slate-800', 'text-red-600');
+                    desc.innerText = "Data QR tidak valid atau siswa tidak terdaftar.";
+                    icon.innerHTML = `<div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-3xl">⚠️</div>`;
+                }
+                closeBtn.classList.remove('hidden');
+            }, 1500);
+        } else {
+            // Normal Boot
+            switchTab('dashboard');
+        }
+    };
+  </script>
+</body>
+</html>
