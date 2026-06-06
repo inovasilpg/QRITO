@@ -87,7 +87,7 @@
    <aside class="bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0 md:w-64 flex flex-col z-50 shadow-sm">
     <div class="bg-slate-900 text-white p-4 flex items-center gap-3">
      <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden p-1">
-      <span class="text-2xl">🚽</span>
+      <img src="https://imgur.com/hKLNu00.png" alt="QRITO Logo" class="w-full h-full object-contain">
      </div>
      <div class="min-w-0 flex-1">
       <h1 id="app-title" class="text-lg font-bold tracking-tight truncate">QRITO</h1>
@@ -156,7 +156,7 @@
       </div>
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-emerald-500 relative overflow-hidden">
        <div class="absolute -right-4 -top-4 w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center"><span class="text-3xl opacity-50">✅</span></div>
-       <p class="text-sm font-semibold text-slate-500 mb-1">Selesai / Kembali</p>
+       <p class="text-sm font-semibold text-slate-500 mb-1">Selesai (Kembali)</p>
        <p class="text-3xl sm:text-4xl font-black text-emerald-600" id="stat-returned">0</p>
       </div>
       <div class="stat-card rounded-2xl p-5 border-l-4 border-l-blue-500 relative overflow-hidden">
@@ -173,11 +173,11 @@
 
      <div class="grid lg:grid-cols-2 gap-6 mb-8">
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">📈 Frekuensi Izin per Kelas Hari Ini</h3>
+       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">📈 Frekuensi Izin per Kelas (Hari Ini vs Total)</h3>
        <div class="h-64"><canvas id="chart-class"></canvas></div>
       </div>
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">⏳ Status Saat Ini</h3>
+       <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">⏳ Status Populasi Siswa Saat Ini</h3>
        <div class="h-64 flex items-center justify-center relative"><canvas id="chart-pie"></canvas></div>
       </div>
      </div>
@@ -471,6 +471,16 @@
     const gasCloudUrl = "https://script.google.com/macros/s/AKfycbzk0yfI_gRLanT_lta0otQMAwke1J0NA7KDQCsdBMGm4hQl1-6aT45OAt7CfjN6D4F7/exec";
     let isSyncing = false;
 
+    // Helper: Mendapatkan tanggal hari ini (Format YYYY-MM-DD zona waktu lokal pengguna)
+    // Menghindari issue offset tanggal dari fungsi default toISOString() 
+    function getTodayString() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
     // Menjalankan fungsi save dan trigger sync
     function saveData() {
         localStorage.setItem('qrizto_classes', JSON.stringify(dbClasses));
@@ -718,10 +728,16 @@
     let chartPieInstance = null;
 
     function updateDashboard() {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayString();
+        
+        // Record total hari ini (keluar hari ini)
         const todayRecords = dbToilet.filter(a => a.date === todayStr);
         
-        const activeRecords = todayRecords.filter(r => r.status === 'keluar');
+        // PENTING: Ambil SEMUA yang berstatus keluar secara global dari database
+        // Bukan difilter by Date lagi, memastikan yang keluar kemarin tapi blm masuk tercatat
+        const activeRecords = dbToilet.filter(r => r.status === 'keluar');
+        
+        // Selesai (kembali) untuk izin yang dibuat HARI INI
         const returnedRecords = todayRecords.filter(r => r.status === 'kembali');
         
         document.getElementById('total-populasi').innerText = dbStudents.length;
@@ -756,18 +772,20 @@
             });
         }
 
+        // Summary Seluruh Waktu (Selalu Sync dgn Backend)
         document.getElementById('summary-total-all').innerText = dbToilet.length;
         document.getElementById('summary-students').innerText = dbStudents.length;
         document.getElementById('summary-completed').innerText = dbToilet.filter(r => r.status === 'kembali').length;
         document.getElementById('summary-active-all').innerText = dbToilet.filter(r => r.status === 'keluar').length;
 
-        renderCharts(todayRecords, activeRecords.length, returnedRecords.length);
+        // Render Grafik dengan Data Backend yang Relevan (All Time Data & Populasi Total)
+        renderCharts(todayRecords, dbToilet, activeRecords.length, dbStudents.length);
     }
 
     function updateWarningCounter(activeRecords = null) {
         if(!activeRecords) {
-            const todayStr = new Date().toISOString().split('T')[0];
-            activeRecords = dbToilet.filter(a => a.date === todayStr && a.status === 'keluar');
+            // Hapus filter by Date agar siswa yang ngegantung sejak kemarin terdeteksi peringatan!
+            activeRecords = dbToilet.filter(a => a.status === 'keluar'); 
         }
         let warnings = 0;
         const now = new Date();
@@ -777,15 +795,19 @@
         document.getElementById('stat-warning').innerText = warnings;
     }
 
-    function renderCharts(todayRecords, activeCount, returnedCount) {
+    function renderCharts(todayRecords, allRecords, activeCount, totalStudents) {
         const pieCtx = document.getElementById('chart-pie');
         if(chartPieInstance) chartPieInstance.destroy();
+        
+        // Kalkulasi proporsi populasi real-time
+        const inClassCount = totalStudents - activeCount;
+
         chartPieInstance = new Chart(pieCtx, {
             type: 'doughnut',
             data: {
-                labels: ['Sedang di Toilet', 'Sudah Kembali'],
+                labels: ['Sedang di Toilet', 'Berada di Kelas'],
                 datasets: [{
-                    data: [activeCount, returnedCount],
+                    data: [activeCount, inClassCount],
                     backgroundColor: ['#f59e0b', '#10b981'],
                     borderWidth: 0
                 }]
@@ -793,16 +815,28 @@
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
         });
 
-        const classStats = {};
-        dbClasses.forEach(c => classStats[c] = 0);
+        // Kalkulasi perbandingan Hari Ini vs Seluruh Waktu per Kelas
+        const classStatsToday = {};
+        const classStatsAll = {};
+        
+        dbClasses.forEach(c => {
+            classStatsToday[c] = 0;
+            classStatsAll[c] = 0;
+        });
         
         todayRecords.forEach(r => {
             const s = dbStudents.find(x => x.id === r.studentId);
-            if(s && classStats[s.classId] !== undefined) classStats[s.classId]++;
+            if(s && classStatsToday[s.classId] !== undefined) classStatsToday[s.classId]++;
         });
 
-        const classLabels = Object.keys(classStats);
-        const classData = classLabels.map(c => classStats[c]);
+        allRecords.forEach(r => {
+            const s = dbStudents.find(x => x.id === r.studentId);
+            if(s && classStatsAll[s.classId] !== undefined) classStatsAll[s.classId]++;
+        });
+
+        const classLabels = Object.keys(classStatsToday);
+        const dataToday = classLabels.map(c => classStatsToday[c]);
+        const dataAll = classLabels.map(c => classStatsAll[c]);
 
         const classCtx = document.getElementById('chart-class');
         if(chartClassInstance) chartClassInstance.destroy();
@@ -811,10 +845,17 @@
             data: {
                 labels: classLabels,
                 datasets: [
-                    { label: 'Total Izin', data: classData, backgroundColor: '#3b82f6', borderRadius: 4 }
+                    { label: 'Hari Ini', data: dataToday, backgroundColor: '#3b82f6', borderRadius: 4 },
+                    { label: 'Total Keseluruhan', data: dataAll, backgroundColor: '#94a3b8', borderRadius: 4 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                }
+            }
         });
     }
 
@@ -921,7 +962,7 @@
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Riwayat_Toilet_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute("download", `Riwayat_Toilet_${getTodayString()}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -981,12 +1022,68 @@
         document.getElementById('qr-image').src = createQRDataURL(scanUrl);
     }
 
-    function downloadSingleQR() {
+    function generateCardDataURL(name, classId, qrDataUrl) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = 380;
+            canvas.height = 520;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+
+            ctx.fillStyle = '#2563eb'; 
+            ctx.fillRect(0, 0, canvas.width, 64);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('KARTU IZIN TOILET', canvas.width / 2, 40);
+
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 24px "Plus Jakarta Sans", sans-serif';
+            ctx.fillText(name, canvas.width / 2, 115);
+
+            ctx.font = 'bold 16px "Plus Jakarta Sans", sans-serif';
+            const textWidth = ctx.measureText(classId).width;
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(canvas.width / 2 - textWidth/2 - 16, 130, textWidth + 32, 30);
+            
+            ctx.fillStyle = '#64748b';
+            ctx.fillText(classId, canvas.width / 2, 151);
+
+            const img = new Image();
+            img.onload = function() {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(65, 185, 250, 250);
+                ctx.drawImage(img, 65, 185, 250, 250);
+                
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '500 13px "Plus Jakarta Sans", sans-serif';
+                ctx.fillText('Harap dibawa saat keluar kelas', canvas.width / 2, 470);
+                ctx.fillText('Sistem Manajemen Izin Toilet', canvas.width / 2, 490);
+
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.src = qrDataUrl;
+        });
+    }
+
+    async function downloadSingleQR() {
         const name = document.getElementById('qr-display-name').innerText;
-        const img = document.getElementById('qr-image').src;
+        const className = document.getElementById('qr-display-class').innerText;
+        const imgUrl = document.getElementById('qr-image').src;
+        
+        const cardDataUrl = await generateCardDataURL(name, className, imgUrl);
+
         const link = document.createElement("a");
-        link.href = img;
-        link.download = `QR_Toilet_${name.replace(/\s+/g, '_')}.png`;
+        link.href = cardDataUrl;
+        link.download = `Kartu_Izin_${name.replace(/\s+/g, '_')}.png`;
         link.click();
     }
 
@@ -995,24 +1092,26 @@
         const students = dbStudents.filter(s => s.classId === classId);
         
         if(students.length === 0) return;
-        showToast("Memproses pembuatan ZIP...", "success");
+        showToast("Memproses pembuatan Kartu & ZIP...", "success");
 
         const zip = new JSZip();
-        const folder = zip.folder(`QR_Toilet_${classId}`);
+        const folder = zip.folder(`Kartu_Toilet_${classId}`);
 
-        students.forEach(s => {
+        for(const s of students) {
             const scanUrl = `${getBaseUrl()}?scan=${s.id}`;
-            const dataUrl = createQRDataURL(scanUrl);
-            const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
-            folder.file(`QR_${s.name.replace(/\s+/g, '_')}.png`, base64Data, {base64: true});
-        });
+            const qrDataUrl = createQRDataURL(scanUrl);
+            const cardDataUrl = await generateCardDataURL(s.name, s.classId, qrDataUrl);
+            
+            const base64Data = cardDataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
+            folder.file(`Kartu_${s.name.replace(/\s+/g, '_')}.png`, base64Data, {base64: true});
+        }
 
         zip.generateAsync({type:"blob"}).then(function(content) {
             const link = document.createElement("a");
             link.href = URL.createObjectURL(content);
-            link.download = `QR_Toilet_${classId}.zip`;
+            link.download = `Kartu_Toilet_${classId}.zip`;
             link.click();
-            showToast(`Selesai! ZIP QR Kelas ${classId} terunduh.`);
+            showToast(`Selesai! ZIP Kartu Kelas ${classId} terunduh.`);
         });
     }
 
@@ -1087,7 +1186,7 @@
         const resultCard = document.getElementById('scan-result-card');
         const badge = document.getElementById('scan-label-badge');
         const bgCircle = document.getElementById('scan-bg-circle');
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayString();
         
         const student = dbStudents.find(s => s.id === dataText);
         
@@ -1100,7 +1199,9 @@
         document.getElementById('scan-student-name').innerText = student.name;
         document.getElementById('scan-student-class').innerText = student.classId;
         
-        const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar' && r.date === todayStr);
+        // Cek apakah user sedang berada di status 'keluar' terlepas dari HARI APA dia keluarnya.
+        // Ini memastikan mereka selalu bisa scan masuk walaupun hari sudah berganti.
+        const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar');
 
         resultCard.classList.remove('hidden');
 
@@ -1120,7 +1221,7 @@
             dbToilet.push({
                 id: 'T' + Date.now() + Math.floor(Math.random()*100),
                 studentId: student.id,
-                date: todayStr,
+                date: todayStr, // Tgl tercatat hari ini
                 timeOut: new Date().toISOString(),
                 timeIn: null,
                 status: 'keluar'
@@ -1333,10 +1434,11 @@
                 const desc = document.getElementById('direct-scan-desc');
                 const icon = document.getElementById('direct-scan-icon');
                 const closeBtn = document.getElementById('direct-scan-close');
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getTodayString();
 
                 if(student) {
-                    const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar' && r.date === todayStr);
+                    // Cari record aktif di mana saja.
+                    const activeRecordIndex = dbToilet.findIndex(r => r.studentId === student.id && r.status === 'keluar');
                     
                     if (activeRecordIndex !== -1) {
                         // Kembali
